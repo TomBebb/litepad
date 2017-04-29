@@ -7,7 +7,6 @@ use uuid::Uuid;
 use std::io::{Read, Write};
 use std::fs::File;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use pulldown_cmark::{Parser, Event, Tag};
@@ -24,7 +23,6 @@ pub struct View {
     pub view: TextView,
     pub uuid: Uuid,
     pub file_path: Arc<Mutex<Option<PathBuf>>>,
-    pub changed: Arc<AtomicBool>,
 }
 impl View {
     pub fn new(path: Option<PathBuf>, tags: &TextTagTable) -> View {
@@ -35,8 +33,7 @@ impl View {
             text: buffer,
             uuid: Uuid::new_v4(),
             view,
-            file_path: Arc::new(Mutex::new(path)),
-            changed: Arc::new(AtomicBool::new(false)),
+            file_path: Arc::new(Mutex::new(path))
         };
         view.update_title();
         view
@@ -78,31 +75,6 @@ impl View {
         event_box.show_all();
         app.tabs.set_current_page(None);
         hbox.show_all();
-        let user_actions = Arc::new(AtomicUsize::new(0));
-        let me = self.clone();
-        let user_actions2 = user_actions.clone();
-        let file2 = self.file_path.clone();
-        let app = app.clone();
-        self.text
-            .connect_changed(move |_| {
-                let file_exists = {
-                    let path = file2.try_lock().unwrap();
-                    path.is_some()
-                };
-                if file_exists {
-                    if user_actions2.load(Ordering::Relaxed) > 0 {
-                        me.changed.store(true, Ordering::Relaxed);
-
-                        app.update_title();
-                        me.update_title();
-                    }
-                }
-            });
-        let user_actions2 = user_actions.clone();
-        self.text
-            .connect_begin_user_action(move |_| { user_actions2.fetch_add(1, Ordering::Relaxed); });
-        self.text
-            .connect_end_user_action(move |_| { user_actions.fetch_sub(1, Ordering::Relaxed); });
     }
 
     pub fn open(path: PathBuf, tags: &TextTagTable) -> View {
@@ -231,7 +203,7 @@ impl View {
                 file.write_all(new_text.as_bytes()).unwrap();
             }
         }
-        self.changed.store(false, Ordering::Relaxed);
+        self.text.set_modified(false);
     }
     pub fn update_title(&self) -> String {
         let title = self.get_title();
@@ -243,7 +215,7 @@ impl View {
         let title = path.as_ref()
             .map(|p| p.display().to_string())
             .unwrap_or(String::from("Untitled"));
-        let symbol = if self.changed.load(Ordering::Relaxed) {
+        let symbol = if self.text.get_modified() {
             "*"
         } else {
             ""

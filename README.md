@@ -1,12 +1,7 @@
-# Notely is cool
+# Litepad
 
-Prelude: Hello, world!
+Litepad is a GTK-based WYSIWYG Markdown editor in Rust. It supports the following features:
 
-I **AM DESTROYER** OF WORLDS!!!
++ Headers
 
-**Muahahahahah**
-
-# 
-
-MUAHAHAHAHHAH ssss
-
++ Bold

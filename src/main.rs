@@ -113,6 +113,7 @@ impl View {
                                  })
                         }
                         Tag::Strong => Some("bold"),
+                        Tag::Emphasis => Some("italic"),
                         _ => None,
                     };
                     if let Some(name) = name {
@@ -169,6 +170,7 @@ impl View {
                 let mut iter = buffer.get_start_iter();
                 let table = buffer.get_tag_table().unwrap();
                 let bold = table.lookup("bold").unwrap();
+                let italic = table.lookup("italic").unwrap();
                 let h1 = table.lookup("h1").unwrap();
                 let h2 = table.lookup("h2").unwrap();
                 let mut new_text = String::with_capacity(text.len());
@@ -184,6 +186,13 @@ impl View {
                             unclosed_tags.push("**");
                         } else {
                             assert_eq!(unclosed_tags.pop(), Some("**"));
+                        }
+                    } else if iter.toggles_tag(Some(&italic)) {
+                        new_text.push_str("*");
+                        if iter.begins_tag(Some(&italic)) {
+                            unclosed_tags.push("*");
+                        } else {
+                            assert_eq!(unclosed_tags.pop(), Some("*"));
                         }
                     }
                     if let Some(ch) = iter.get_char() {
@@ -259,6 +268,9 @@ impl App {
         let bold = TextTag::new("bold");
         bold.set_property_weight(700);
         tags.add(&bold);
+        let italic = TextTag::new("italic");
+        bold.set_property_style_set(true);
+        tags.add(&italic);
         let default_view = View::new(None, &tags);
         App {
             tags,

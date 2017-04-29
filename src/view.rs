@@ -37,14 +37,14 @@ impl View {
         event_box.connect_button_press_event(move |me, ev| {
             if ev.get_button() == 3 {
                 // Load menu
-                let glade_src = include_str!("../menu.glade");
+                let glade_src = include_str!("../tab-menu.glade");
                 // Build from glade
                 let builder = Builder::new_from_string(glade_src);
                 let menu: Menu = builder.get_object("menu").unwrap();
                 let close_tab: MenuItem = builder.get_object("close-tab").unwrap();
                 let app = app2.clone();
                 let source = source.clone();
-                close_tab.connect_select(move |_| {
+                close_tab.connect_activate(move |_| {
                     let index = {
                         let mut views = app.views.try_lock().unwrap();
                         if let Some(index) = views

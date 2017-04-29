@@ -2,12 +2,15 @@ use std::fmt;
 use std::fs::File;
 use std::io::{BufWriter, BufRead, BufReader, Write};
 use std::path::PathBuf;
+use hyper::Url;
+use hyper::client::Client;
 
 /// A source from which documents can be loaded
 #[derive(Clone, Eq, PartialEq)]
 pub enum Source {
     Unknown,
     File(PathBuf),
+    Url(Url)
 }
 
 impl Source {
@@ -24,7 +27,7 @@ impl Source {
                 let path = path.as_path();
                 let file = File::create(path).unwrap();
                 Some(Box::new(BufWriter::new(file)))
-            }
+            },
             _ => None,
         }
     }
@@ -34,7 +37,12 @@ impl Source {
                 let path = path.as_path();
                 let file = File::open(path).unwrap();
                 Some(Box::new(BufReader::new(file)))
-            }
+            },
+            Source::Url(ref url) => {
+                let client = Client::new();
+                let res = client.get(url.clone()).send().unwrap();
+                Some(Box::new(BufReader::new(res)))
+            },
             _ => None,
         }
     }
@@ -43,8 +51,9 @@ impl Source {
 impl fmt::Display for Source {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Source::Unknown => f.write_str("Untitled"),
             Source::File(ref path) => path.display().fmt(f),
+            Source::Url(ref url) => url.fmt(f),
+            Source::Unknown => f.write_str("Untitled"),
         }
     }
 }

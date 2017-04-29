@@ -3,6 +3,9 @@ name = "litepad"
 version = "0.1.0"
 authors = ["Tom Bebbington <tophattedcoder@gmail.com>"]
 
+[dependencies.hyper]
+version = "0.10.9"
+
 [dependencies.matches]
 version = "*"
 

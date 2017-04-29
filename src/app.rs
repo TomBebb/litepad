@@ -5,6 +5,8 @@ use gtk::*;
 
 use std::sync::{Arc, Mutex};
 
+use hyper::Url;
+
 
 const TITLE: &str = "Litepad";
 const H1_SCALE: f64 = 2.;
@@ -141,7 +143,39 @@ impl App {
             }
         });
         let me = self.clone();
+        self.open.connect_button_press_event(move |open, ev| {
+            if ev.get_button() == 3 {
+                // Load menu
+                let glade_src = include_str!("../load-menu.glade");
+                // Build from glade
+                let builder = Builder::new_from_string(glade_src);
+                let menu: Menu = builder.get_object("menu").unwrap();
+                let load_url: MenuItem = builder.get_object("load-url").unwrap();
+                let me = me.clone();
+                load_url.connect_activate(move |_| {
+                    let glade_src = include_str!("../url-dialog.glade");
+                    // Build from glade
+                    let builder = Builder::new_from_string(glade_src);
+                    let url: Entry = builder.get_object("url").unwrap();
+                    let dialog: Dialog = builder.get_object("dialog").unwrap();
+                    let me = me.clone();
+                    let ok: Button = builder.get_object("ok").unwrap();
+                    let dialog2 = dialog.clone();
+                    ok.connect_clicked(move |_| {
+                        me.open(Source::Url(Url::parse(&url.get_text().unwrap().trim()).unwrap()));
+                        dialog2.destroy();
+                    });
+                    dialog.show_all();
+                    dialog.run();
+                });
+                // Pop it up
+                menu.popup(None::<&Widget>, Some(open), |_, _, _| true, 0, ev.get_time());
+            }
+            Inhibit(false)
+        });
+        let me = self.clone();
         let window2 = self.window.clone();
+
         self.open
             .connect_clicked(move |_| {
                 let window = &window2;

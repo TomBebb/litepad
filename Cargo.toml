@@ -3,6 +3,11 @@ name = "litepad"
 version = "0.1.0"
 authors = ["Tom Bebbington <tophattedcoder@gmail.com>"]
 
+[dependencies.uuid]
+version = "*"
+features = ["v4"]
+
+
 [dependencies.pulldown-cmark]
 version = "0.0.11"
 default-features = false

@@ -3,9 +3,8 @@ name = "litepad"
 version = "0.1.0"
 authors = ["Tom Bebbington <tophattedcoder@gmail.com>"]
 
-[dependencies.uuid]
+[dependencies.matches]
 version = "*"
-features = ["v4"]
 
 
 [dependencies.pulldown-cmark]
@@ -15,4 +14,3 @@ default-features = false
 [dependencies.gtk]
 version = "0.1.2"
 features = ["v3_10"]
-

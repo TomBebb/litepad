@@ -1,8 +1,8 @@
+use source::Source;
 use view::View;
 
 use gtk::*;
 
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 
@@ -18,6 +18,7 @@ pub struct App {
     pub italic: ToolButton,
     pub bold: ToolButton,
     pub h1: ToolButton,
+    pub h2: ToolButton,
     pub new: ToolButton,
     pub open: ToolButton,
     pub save: ToolButton,
@@ -49,18 +50,18 @@ impl App {
         let italic = TextTag::new("italic");
         bold.set_property_style_set(true);
         tags.add(&italic);
-        let default_view = View::new(None, &tags);
         App {
             tags,
             window: builder.get_object("window").unwrap(),
             h1: builder.get_object("h1").unwrap(),
+            h2: builder.get_object("h2").unwrap(),
             bold: builder.get_object("bold").unwrap(),
             italic: builder.get_object("italic").unwrap(),
             tabs: builder.get_object("tabs").unwrap(),
             new: builder.get_object("new").unwrap(),
             open: builder.get_object("open").unwrap(),
             save: builder.get_object("save").unwrap(),
-            views: Arc::new(Mutex::new(vec![default_view])),
+            views: Arc::new(Mutex::new(Vec::with_capacity(16))),
         }
     }
     pub fn update_title(&self, view: Option<usize>) {
@@ -70,8 +71,8 @@ impl App {
             self.window.set_title(&format!("{} - {}", title, TITLE));
         }
     }
-    pub fn open(&self, path: PathBuf) {
-        let view = View::open(path, &self.tags);
+    pub fn open(&self, source: Source) {
+        let view = View::open(source, &self.tags);
         view.setup(self);
         {
             let mut views = self.views.try_lock().unwrap();
@@ -80,10 +81,6 @@ impl App {
     }
     pub fn setup(&self) {
         self.tabs.remove_page(None);
-        {
-            let views = self.views.try_lock().unwrap();
-            views[0].setup(self);
-        };
         let filter = FileFilter::new();
         filter.add_pattern("*.md");
         filter.add_pattern("*.txt");
@@ -93,7 +90,7 @@ impl App {
         let me = self.clone();
         self.new
             .connect_clicked(move |_| {
-                                 let view = View::new(None, &me.tags);
+                                 let view = View::new(Source::Unknown, &me.tags);
                                  view.setup(&me);
                                  {
                                      let mut views = me.views.try_lock().unwrap();
@@ -107,15 +104,17 @@ impl App {
         let tabs = self.tabs.clone();
         let me = self.clone();
         save.connect_clicked(move |_| {
-            let path = {
+            let source = {
                 let views = views.try_lock().unwrap();
                 views
                     .get(tabs.get_property_page() as usize)
-                    .and_then(|v| v.file_path.try_lock().unwrap().clone())
+                    .map(|v| v.source.try_lock().unwrap().clone())
             };
-            if path.is_some() {
+            if source.is_some() {
                 let views = views.try_lock().unwrap();
-                views[tabs.get_property_page() as usize].save(None);
+                views[tabs.get_property_page() as usize]
+                    .save(Source::Unknown)
+                    .unwrap();
             } else {
                 let dialog = FileChooserDialog::new(Some("Select a file"),
                                                     Some(&window),
@@ -130,8 +129,8 @@ impl App {
                         if let Some(filename) = dialog.get_filename() {
                             let views = me.views.try_lock().unwrap();
                             if let Some(view) = views.get(me.current_view()) {
-                                let mut path = view.file_path.try_lock().unwrap();
-                                *path = Some(filename);
+                                let mut source = view.source.try_lock().unwrap();
+                                *source = Source::File(filename);
                             }
                         }
                     }
@@ -157,7 +156,7 @@ impl App {
                 dialog.connect_response(move |dialog, id| {
                                             if id == 0 {
                                                 if let Some(filename) = dialog2.get_filename() {
-                                                    me.open(filename);
+                                                    me.open(Source::File(filename));
                                                 }
                                             }
                                             dialog.destroy();
@@ -179,6 +178,14 @@ impl App {
                                  let views = me.views.try_lock().unwrap();
                                  if let Some(view) = views.get(me.current_view()) {
                                      view.apply_line_tag(&me.tags.lookup("h1").unwrap());
+                                 }
+                             });
+        let me = self.clone();
+        self.h2
+            .connect_clicked(move |_| {
+                                 let views = me.views.try_lock().unwrap();
+                                 if let Some(view) = views.get(me.current_view()) {
+                                     view.apply_line_tag(&me.tags.lookup("h2").unwrap());
                                  }
                              });
         let me = self.clone();

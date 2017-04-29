@@ -1,16 +1,11 @@
 use app::App;
-
+use source::Source;
 use gtk::*;
 
-use std::env;
-use std::fs::File;
-use std::io::{Read, Write};
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::io::Error;
 
 use pulldown_cmark::{Parser, Event, Tag};
-
-use uuid::Uuid;
 
 
 #[derive(Clone)]
@@ -18,22 +13,19 @@ pub struct View {
     pub label: Label,
     pub text: TextBuffer,
     pub view: TextView,
-    pub uuid: Uuid,
-    pub file_path: Arc<Mutex<Option<PathBuf>>>,
+    pub source: Arc<Mutex<Source>>,
 }
+
 impl View {
-    pub fn new(path: Option<PathBuf>, tags: &TextTagTable) -> View {
+    pub fn new(source: Source, tags: &TextTagTable) -> View {
         let buffer = TextBuffer::new(Some(tags));
         let view = TextView::new_with_buffer(&buffer);
-        let view = View {
-            label: Label::new("..."),
+        View {
+            label: Label::new(format!("{}", source).as_str()),
             text: buffer,
-            uuid: Uuid::new_v4(),
             view,
-            file_path: Arc::new(Mutex::new(path)),
-        };
-        view.update_title();
-        view
+            source: Arc::new(Mutex::new(source)),
+        }
     }
     pub fn setup(&self, app: &App) {
         let hbox = Box::new(Orientation::Horizontal, 2);
@@ -41,7 +33,7 @@ impl View {
         let event_box = EventBox::new();
         event_box.add(&self.label);
         let app2 = app.clone();
-        let id = self.uuid.clone();
+        let source = self.source.clone();
         event_box.connect_button_press_event(move |me, ev| {
             if ev.get_button() == 3 {
                 // Load menu
@@ -51,14 +43,17 @@ impl View {
                 let menu: Menu = builder.get_object("menu").unwrap();
                 let close_tab: MenuItem = builder.get_object("close-tab").unwrap();
                 let app = app2.clone();
-                let id = id.clone();
+                let source = source.clone();
                 close_tab.connect_select(move |_| {
                     let index = {
                         let mut views = app.views.try_lock().unwrap();
                         if let Some(index) = views
                                .iter()
                                .enumerate()
-                               .find(|&(_, ref v)| v.uuid == id)
+                               .find(|&(_, ref v)| {
+                                         *v.source.try_lock().unwrap() ==
+                                         *source.try_lock().unwrap()
+                                     })
                                .map(|(i, _)| i) {
                             views.remove(index);
                             Some(index)
@@ -81,12 +76,9 @@ impl View {
         hbox.show_all();
     }
 
-    pub fn open(path: PathBuf, tags: &TextTagTable) -> View {
-        let view = View::new(Some(path.clone()), tags);
-        let path = path.as_path();
-        let mut file = File::open(path).unwrap();
-        let mut orig_text = String::new();
-        file.read_to_string(&mut orig_text).unwrap();
+    pub fn open(source: Source, tags: &TextTagTable) -> View {
+        let orig_text = source.load();
+        let view = View::new(source, tags);
         let parser = Parser::new(&orig_text);
         let mut tag_starts = Vec::with_capacity(4);
         let mut tag_defs = Vec::new();
@@ -164,59 +156,56 @@ impl View {
             }
         }
     }
-    pub fn save(&self, new_path: Option<PathBuf>) {
-        let mut path = self.file_path.try_lock().unwrap();
-        *path = path.clone().or(new_path);
+    pub fn save(&self, new_source: Source) -> Result<(), Error> {
+        let mut source = self.source.try_lock().unwrap();
+        if *source == Source::Unknown {
+            *source = new_source;
+        }
         let buffer = &self.text;
-        let (start, end) = buffer.get_bounds();
-        if let Some(text) = buffer.get_text(&start, &end, true) {
-            if let Some(path) = path.as_ref() {
-                let mut iter = buffer.get_start_iter();
-                let table = buffer.get_tag_table().unwrap();
-                let bold = table.lookup("bold").unwrap();
-                let italic = table.lookup("italic").unwrap();
-                let h1 = table.lookup("h1").unwrap();
-                let h2 = table.lookup("h2").unwrap();
-                let mut new_text = String::with_capacity(text.len());
-                let mut unclosed_tags = Vec::new();
-                loop {
-                    if iter.begins_tag(Some(&h1)) {
-                        new_text.push_str("# ");
-                    } else if iter.begins_tag(Some(&h2)) {
-                        new_text.push_str("## ");
-                    } else if iter.toggles_tag(Some(&bold)) {
-                        new_text.push_str("**");
-                        if iter.begins_tag(Some(&bold)) {
-                            unclosed_tags.push("**");
-                        } else {
-                            assert_eq!(unclosed_tags.pop(), Some("**"));
-                        }
-                    } else if iter.toggles_tag(Some(&italic)) {
-                        new_text.push_str("*");
-                        if iter.begins_tag(Some(&italic)) {
-                            unclosed_tags.push("*");
-                        } else {
-                            assert_eq!(unclosed_tags.pop(), Some("*"));
-                        }
+        if let Some(mut writer) = source.writer() {
+            let mut iter = buffer.get_start_iter();
+            let table = buffer.get_tag_table().unwrap();
+            let bold = table.lookup("bold").unwrap();
+            let italic = table.lookup("italic").unwrap();
+            let h1 = table.lookup("h1").unwrap();
+            let h2 = table.lookup("h2").unwrap();
+            let mut unclosed_tags = Vec::new();
+            loop {
+                if iter.begins_tag(Some(&h1)) {
+                    writer.write_all(b"# ")?;
+                } else if iter.begins_tag(Some(&h2)) {
+                    writer.write_all(b"## ")?;
+                } else if iter.toggles_tag(Some(&bold)) {
+                    writer.write_all(b"**")?;
+                    if iter.begins_tag(Some(&bold)) {
+                        unclosed_tags.push("**");
+                    } else {
+                        debug_assert_eq!(unclosed_tags.pop(), Some("**"));
                     }
-                    if let Some(ch) = iter.get_char() {
-                        if ch == '\n' {
-                            new_text.push(ch);
-                        }
-                        new_text.push(ch);
-                    }
-                    if !iter.forward_char() {
-                        break;
+                } else if iter.toggles_tag(Some(&italic)) {
+                    writer.write_all(b"*")?;
+                    if iter.begins_tag(Some(&italic)) {
+                        unclosed_tags.push("*");
+                    } else {
+                        debug_assert_eq!(unclosed_tags.pop(), Some("*"));
                     }
                 }
-                for tag in unclosed_tags {
-                    new_text.push_str(tag)
+                if let Some(ch) = iter.get_char() {
+                    if ch == '\n' {
+                        writer.write_all(b"\n")?;
+                    }
+                    writer.write_all(&ch.to_string().as_bytes())?;
                 }
-                let mut file = File::create(path).unwrap();
-                file.write_all(new_text.as_bytes()).unwrap();
+                if !iter.forward_char() {
+                    break;
+                }
+            }
+            for tag in unclosed_tags {
+                writer.write_all(tag.as_bytes())?;
             }
         }
         self.text.set_modified(false);
+        Ok(())
     }
     pub fn update_title(&self) -> String {
         let title = self.get_title();
@@ -224,18 +213,8 @@ impl View {
         title
     }
     pub fn get_title(&self) -> String {
-        let path = self.file_path.try_lock().unwrap();
-        let title = if let Some(path) = path.as_ref() {
-            let mut text: String = path.display().to_string();
-            if let Some(home) = env::home_dir() {
-                if path.starts_with(&home) {
-                    text = text.replace(&home.display().to_string(), "~");
-                }
-            }
-            text
-        } else {
-            "Untitled".into()
-        };
+        let source = self.source.try_lock().unwrap();
+        let title = format!("{}", *source);
         let symbol = if self.text.get_modified() { "*" } else { "" };
         format!("{}{}", title, symbol)
     }

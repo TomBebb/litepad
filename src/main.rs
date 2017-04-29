@@ -1,8 +1,10 @@
 extern crate gtk;
-extern crate uuid;
+#[macro_use]
+extern crate matches;
 extern crate pulldown_cmark;
 
 mod app;
+mod source;
 mod view;
 
 use gtk::*;

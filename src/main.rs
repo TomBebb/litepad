@@ -4,8 +4,9 @@ extern crate pulldown_cmark;
 
 use gtk::*;
 use uuid::Uuid;
-use std::io::{Read, Write};
+use std::env;
 use std::fs::File;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -33,13 +34,12 @@ impl View {
             text: buffer,
             uuid: Uuid::new_v4(),
             view,
-            file_path: Arc::new(Mutex::new(path))
+            file_path: Arc::new(Mutex::new(path)),
         };
         view.update_title();
         view
     }
-    pub fn setup(&self, app: &App)
-    {
+    pub fn setup(&self, app: &App) {
         let hbox = Box::new(Orientation::Horizontal, 2);
         hbox.add(&self.view);
         let event_box = EventBox::new();
@@ -57,17 +57,25 @@ impl View {
                 let app = app2.clone();
                 let id = id.clone();
                 close_tab.connect_select(move |_| {
-                    {
+                    let index = {
                         let mut views = app.views.try_lock().unwrap();
-                        if let Some(index) = views.iter().enumerate().find(|&(_, ref v)| v.uuid == id).map(|(i, _)| i) {
+                        if let Some(index) = views
+                               .iter()
+                               .enumerate()
+                               .find(|&(_, ref v)| v.uuid == id)
+                               .map(|(i, _)| i) {
                             views.remove(index);
-                            app.tabs.remove_page(Some(index as u32));
+                            Some(index)
+                        } else {
+                            None
                         }
+                    };
+                    if let Some(index) = index {
+                        app.tabs.remove_page(Some(index as u32));
                     }
-                    app.update_title();
                 });
                 // Pop it up
-                menu.popup(None::<&Widget>, Some(me), |_, _, _| {true}, 0, ev.get_time());
+                menu.popup(None::<&Widget>, Some(me), |_, _, _| true, 0, ev.get_time());
             }
             Inhibit(false)
         });
@@ -221,14 +229,18 @@ impl View {
     }
     pub fn get_title(&self) -> String {
         let path = self.file_path.try_lock().unwrap();
-        let title = path.as_ref()
-            .map(|p| p.display().to_string())
-            .unwrap_or(String::from("Untitled"));
-        let symbol = if self.text.get_modified() {
-            "*"
+        let title = if let Some(path) = path.as_ref() {
+            let mut text: String = path.display().to_string();
+            if let Some(home) = env::home_dir() {
+                if path.starts_with(&home) {
+                    text = text.replace(&home.display().to_string(), "~");
+                }
+            }
+            text
         } else {
-            ""
+            "Untitled".into()
         };
+        let symbol = if self.text.get_modified() { "*" } else { "" };
         format!("{}{}", title, symbol)
     }
 }
@@ -285,19 +297,20 @@ impl App {
             views: Arc::new(Mutex::new(vec![default_view])),
         }
     }
-    pub fn update_title(&self) {
+    pub fn update_title(&self, view: Option<usize>) {
         let views = self.views.try_lock().unwrap();
-        if let Some(view) = views.get(self.current_view()) {
+        if let Some(view) = views.get(view.unwrap_or(self.current_view())) {
             let title = view.update_title();
-            self.window.set_title(&title);
+            self.window.set_title(&format!("{} - {}", title, TITLE));
         }
     }
     pub fn open(&self, path: PathBuf) {
-        let mut views = self.views.try_lock().unwrap();
         let view = View::open(path, &self.tags);
         view.setup(self);
-        //self.tabs.set_property_page(views.len() as i32);
-        views.push(view);
+        {
+            let mut views = self.views.try_lock().unwrap();
+            views.push(view);
+        };
     }
     pub fn setup(&self) {
         self.tabs.remove_page(None);
@@ -312,12 +325,15 @@ impl App {
         filter.add_mime_type("text/markdown");
         filter.set_name("Markdown");
         let me = self.clone();
-        self.new.connect_clicked(move |_| {
-            let mut views = me.views.try_lock().unwrap();
-            let view = View::new(None, &me.tags);
-            view.setup(&me);
-            views.push(view);
-        });
+        self.new
+            .connect_clicked(move |_| {
+                                 let view = View::new(None, &me.tags);
+                                 view.setup(&me);
+                                 {
+                                     let mut views = me.views.try_lock().unwrap();
+                                     views.push(view);
+                                 }
+                             });
         let window = self.window.clone();
         let filter2 = filter.clone();
         let save = self.save.clone();
@@ -353,13 +369,11 @@ impl App {
                             }
                         }
                     }
-                    me.update_title();
                     dialog.destroy();
                 });
                 dialog.show_all();
                 dialog.run();
             }
-            me.update_title();
         });
         let me = self.clone();
         let window2 = self.window.clone();
@@ -375,14 +389,13 @@ impl App {
                 let dialog2 = dialog.clone();
                 let me = me.clone();
                 dialog.connect_response(move |dialog, id| {
-                    if id == 0 {
-                        if let Some(filename) = dialog2.get_filename() {
-                            me.open(filename);
-                        }
-                        me.update_title();
-                    }
-                    dialog.destroy();
-                });
+                                            if id == 0 {
+                                                if let Some(filename) = dialog2.get_filename() {
+                                                    me.open(filename);
+                                                }
+                                            }
+                                            dialog.destroy();
+                                        });
                 dialog.show_all();
                 dialog.run();
             });
@@ -402,6 +415,9 @@ impl App {
                                      view.apply_line_tag(&me.tags.lookup("h1").unwrap());
                                  }
                              });
+        let me = self.clone();
+        self.tabs
+            .connect_switch_page(move |_, _, id| { me.update_title(Some(id as usize)); });
     }
 }
 

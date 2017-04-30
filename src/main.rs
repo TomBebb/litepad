@@ -1,6 +1,4 @@
 extern crate gtk;
-#[macro_use]
-extern crate matches;
 extern crate pulldown_cmark;
 extern crate hyper;
 

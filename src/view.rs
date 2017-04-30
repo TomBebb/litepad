@@ -165,7 +165,6 @@ impl View {
         for event in parser {
             println!("{:?}", event);
             match event {
-                Event::SoftBreak |
                 Event::HardBreak |
                 Event::End(Tag::Paragraph) => {
                     text.push('\n');

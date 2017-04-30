@@ -13,6 +13,7 @@ use hyper::Url;
 use util;
 
 use gtk::*;
+use std::boxed::Box;
 
 use webbrowser;
 
@@ -152,15 +153,15 @@ impl View {
         let orig_text = source.load();
         let view = View::new(source, tags);
         let parser = Parser::new(&orig_text);
+        let mut post_ops: Vec<Box<Fn(&TextView, &TextBuffer, &[Option<Pixbuf>])>> = Vec::with_capacity(4);
         let mut tag_starts = Vec::with_capacity(4);
         let mut tag_defs = Vec::new();
         let mut row = 0;
         let mut column = 0;
         let mut text = String::with_capacity(orig_text.len());
-        let mut image_urls = Vec::new();
-        let mut image_places = Vec::new();
         let mut links = Vec::new();
         let mut in_image = false;
+        let mut image_urls = Vec::new();
         for event in parser {
             println!("{:?}", event);
             match event {
@@ -170,6 +171,17 @@ impl View {
                     text.push('\n');
                     row += 1;
                     column = 0;
+                },
+                Event::End(Tag::Rule) => {
+                    let (sep_row, sep_column) = (row, column);
+                    post_ops.push(Box::new(move |view, buf, _| {
+                        let mut iter = buf.get_iter_at_line_index(sep_row, sep_column);
+                        if let Some(anchor) = buf.create_child_anchor(&mut iter) {
+                            let sep = Separator::new(Orientation::Horizontal);
+                            view.add_child_at_anchor(&sep, &anchor);
+                        }
+
+                    }));
                 },
                 Event::Start(tag) => {
                     match tag {
@@ -185,8 +197,20 @@ impl View {
                     tag_starts.push((tag, row, column))
                 },
                 Event::End(Tag::Image(ref url, _)) => {
-                    image_places.push((image_urls.len(), row, column));
-                    image_urls.push(Url::parse(&url).unwrap());
+                    let url = Url::parse(&url).unwrap();
+                    let (img_row, img_col) = (row, column);
+                    let index = image_urls.len();
+                    image_urls.push(url.clone());
+                    let me_image_urls = view.image_urls.clone();
+                    post_ops.push(Box::new(move |_, buf, pixbufs| {
+                        let mut actual_image_urls = me_image_urls.lock().unwrap();
+                        // If the image has loaded
+                        if let Some(ref pixbuf) = pixbufs[index] {
+                            actual_image_urls.insert(pixbuf.clone(), url.clone());
+                            let mut place = buf.get_iter_at_line_index(img_row, img_col);
+                            buf.insert_pixbuf(&mut place, pixbuf);
+                        }
+                    }));
                     in_image = false;
                 }
                 Event::End(_) => {
@@ -245,15 +269,8 @@ impl View {
                 }
             }
         }
-        {
-            let mut actual_image_urls = view.image_urls.lock().unwrap();
-            for (index, row, column) in image_places {
-                if let Some(ref pixbuf) = pixbufs[index] {
-                    actual_image_urls.insert(pixbuf.clone(), image_urls[index].clone());
-                    let mut place = view.text.get_iter_at_line_index(row, column);
-                    view.text.insert_pixbuf(&mut place, pixbuf);
-                }
-            }
+        for op in post_ops {
+            op(&view.view, &view.text, pixbufs.as_slice());
         }
         view
     }

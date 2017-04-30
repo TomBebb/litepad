@@ -145,6 +145,7 @@ impl View {
         let mut image_urls = Vec::new();
         let mut image_places = Vec::new();
         let mut links = Vec::new();
+        let mut in_image = false;
         for event in parser {
             println!("{:?}", event);
             match event {
@@ -154,11 +155,15 @@ impl View {
                     text.push('\n');
                     row += 1;
                     column = 0;
+                },
+                Event::Start(Tag::Image(_, _)) => {
+                    in_image = true;
                 }
                 Event::Start(tag) => tag_starts.push((tag, row, column)),
                 Event::End(Tag::Image(ref url, _)) => {
                     image_places.push((image_urls.len(), row, column));
                     image_urls.push(Url::parse(&url).unwrap());
+                    in_image = false;
                 },
                 Event::End(_) => {
                     let (tag, start_row, start_column) = tag_starts.pop().unwrap();
@@ -185,7 +190,7 @@ impl View {
                         tag_defs.push((name, start_row, start_column, row, column));
                     }
                 }
-                Event::Text(ref etext) => {
+                Event::Text(ref etext) if !in_image => {
                     text.push_str(&**etext);
                     column += etext.len() as i32
                 }

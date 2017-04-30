@@ -8,18 +8,16 @@ use pulldown_cmark::{Parser, Event, Tag};
 
 use gdk_pixbuf::{Pixbuf, PixbufLoader, InterpType};
 
-use hyper::net::HttpsConnector;
-use hyper::{Client, Url};
-use hyper_native_tls::NativeTlsClient;
+use hyper::Url;
+
+use util;
 
 use gtk::*;
 
 use webbrowser;
 
 fn load_pixbufs(urls: Vec<Url>, max_width: i32) -> Vec<Option<Pixbuf>> {
-    let ssl = NativeTlsClient::new().unwrap();
-    let connector = HttpsConnector::new(ssl);
-    let client = Client::with_connector(connector);
+    let client = util::make_client();
     let mut bytes = Vec::with_capacity(512);
     urls.into_iter().map(|url| {
         let loader = PixbufLoader::new();

@@ -7,6 +7,7 @@ extern crate webbrowser;
 
 mod app;
 mod source;
+mod util;
 mod view;
 
 use gtk::*;

@@ -2,8 +2,8 @@ use std::fmt;
 use std::fs::File;
 use std::io::{BufWriter, BufRead, BufReader, Write};
 use std::path::PathBuf;
+use util;
 use hyper::Url;
-use hyper::client::Client;
 
 /// A source from which documents can be loaded
 #[derive(Clone, Eq, PartialEq)]
@@ -39,7 +39,7 @@ impl Source {
                 Some(Box::new(BufReader::new(file)))
             },
             Source::Url(ref url) => {
-                let client = Client::new();
+                let client = util::make_client();
                 let res = client.get(url.clone()).send().unwrap();
                 Some(Box::new(BufReader::new(res)))
             },

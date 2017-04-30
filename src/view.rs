@@ -16,35 +16,47 @@ use gtk::*;
 
 use webbrowser;
 
+fn is_block(tag: &Tag) -> bool {
+    match *tag {
+        Tag::Header(_) |
+        Tag::CodeBlock(_) => true,
+        _ => false,
+    }
+}
+
 fn load_pixbufs(urls: &[Url], max_width: i32) -> Vec<Option<Pixbuf>> {
     let client = util::make_client();
     let mut bytes = Vec::with_capacity(512);
-    urls.iter().map(|url| {
-        let loader = PixbufLoader::new();
-        if let Ok(input) = client.get(url.clone()).send() {
-            let mut reader = BufReader::new(input);
-            bytes.clear();
-            reader.read_to_end(&mut bytes).unwrap();
-            loader.loader_write(&bytes).unwrap();
-            loader.close().unwrap();
-            let mut image = loader.get_pixbuf().unwrap();
-            let (width, height) = (image.get_width(), image.get_height());
-            if width > max_width {
-                let (new_width, new_height) = (max_width, (height * max_width) / width);
-                image = image.scale_simple(new_width, new_height, InterpType::Bilinear).unwrap();
+    urls.iter()
+        .map(|url| {
+            let loader = PixbufLoader::new();
+            if let Ok(input) = client.get(url.clone()).send() {
+                let mut reader = BufReader::new(input);
+                bytes.clear();
+                reader.read_to_end(&mut bytes).unwrap();
+                loader.loader_write(&bytes).unwrap();
+                loader.close().unwrap();
+                let mut image = loader.get_pixbuf().unwrap();
+                let (width, height) = (image.get_width(), image.get_height());
+                if width > max_width {
+                    let (new_width, new_height) = (max_width, (height * max_width) / width);
+                    image = image
+                        .scale_simple(new_width, new_height, InterpType::Bilinear)
+                        .unwrap();
+                }
+                Some(image)
+            } else {
+                None
             }
-            Some(image)
-        } else {
-            None
-        }
-    }).collect()
+        })
+        .collect()
 }
 
 #[derive(Clone)]
 pub struct MetaIter<T> {
     pub start: TextIter,
     pub end: TextIter,
-    pub data: T
+    pub data: T,
 }
 
 #[derive(Clone)]
@@ -55,7 +67,7 @@ pub struct View {
     pub view: TextView,
     pub window: ScrolledWindow,
     pub source: Arc<Mutex<Source>>,
-    pub image_urls: Arc<Mutex<HashMap<Pixbuf, Url>>>
+    pub image_urls: Arc<Mutex<HashMap<Pixbuf, Url>>>,
 }
 
 impl View {
@@ -70,7 +82,7 @@ impl View {
             view,
             window,
             source: Arc::new(Mutex::new(source)),
-            image_urls: Arc::new(Mutex::new(HashMap::new()))
+            image_urls: Arc::new(Mutex::new(HashMap::new())),
         }
     }
     pub fn setup(&self, app: &App) {
@@ -78,19 +90,20 @@ impl View {
         let event_box = EventBox::new();
         event_box.add(&self.label);
         let links = self.links.clone();
-        self.view.connect_button_press_event(move |text, ev| {
-            let (x, y) = ev.get_position();
-            let links = links.lock().unwrap();
-            if let Some(iter) = text.get_iter_at_location(x as i32, y as i32) {
-                for link in links.iter() {
-                    if link.start <= iter && link.end >= iter {
-                        webbrowser::open(&link.data).unwrap();
-                        break;
+        self.view
+            .connect_button_press_event(move |text, ev| {
+                let (x, y) = ev.get_position();
+                let links = links.lock().unwrap();
+                if let Some(iter) = text.get_iter_at_location(x as i32, y as i32) {
+                    for link in links.iter() {
+                        if link.start <= iter && link.end >= iter {
+                            webbrowser::open(&link.data).unwrap();
+                            break;
+                        }
                     }
                 }
-            }
-            Inhibit(false)
-        });
+                Inhibit(false)
+            });
         let app2 = app.clone();
         let source = self.source.clone();
         event_box.connect_button_press_event(move |me, ev| {
@@ -105,13 +118,12 @@ impl View {
                 let source = source.clone();
                 close_tab.connect_activate(move |_| {
                     let index = {
-                        let mut views = app.views.try_lock().unwrap();
+                        let mut views = app.views.lock().unwrap();
                         if let Some(index) = views
                                .iter()
                                .enumerate()
                                .find(|&(_, ref v)| {
-                                         *v.source.try_lock().unwrap() ==
-                                         *source.try_lock().unwrap()
+                                         *v.source.lock().unwrap() == *source.lock().unwrap()
                                      })
                                .map(|(i, _)| i) {
                             views.remove(index);
@@ -157,7 +169,7 @@ impl View {
                     text.push('\n');
                     row += 1;
                     column = 0;
-                },
+                }
                 Event::Start(Tag::Image(_, _)) => {
                     in_image = true;
                 }
@@ -166,12 +178,16 @@ impl View {
                     image_places.push((image_urls.len(), row, column));
                     image_urls.push(Url::parse(&url).unwrap());
                     in_image = false;
-                },
+                }
                 Event::End(_) => {
                     let (tag, start_row, start_column) = tag_starts.pop().unwrap();
+                    if is_block(&tag) {
+                        text.push('\n');
+                    }
                     let name = match tag {
+                        Tag::Code |
+                        Tag::CodeBlock(_) => Some("code"),
                         Tag::Header(n) => {
-                            text.push('\n');
                             column = 0;
                             row += 1;
                             Some(match n {
@@ -179,11 +195,11 @@ impl View {
                                      2 => "h2",
                                      _ => "h3",
                                  })
-                        },
+                        }
                         Tag::Link(url, _) => {
                             links.push(url);
                             Some("link")
-                        },
+                        }
                         Tag::Strong => Some("bold"),
                         Tag::Emphasis => Some("italic"),
                         _ => None,
@@ -210,10 +226,10 @@ impl View {
                 view.text.apply_tag_by_name(tag, &start, &end);
                 if tag == "link" {
                     new_links.push(MetaIter {
-                        start: start,
-                        end: end,
-                        data: links[link].to_string()
-                    });
+                                       start: start,
+                                       end: end,
+                                       data: links[link].to_string(),
+                                   });
                     link += 1;
                 }
             }
@@ -256,7 +272,7 @@ impl View {
         }
     }
     pub fn save(&self, new_source: Source) -> Result<(), Error> {
-        let mut source = self.source.try_lock().unwrap();
+        let mut source = self.source.lock().unwrap();
         if *source == Source::Unknown {
             *source = new_source;
         }
@@ -273,7 +289,9 @@ impl View {
             loop {
                 if let Some(pixbuf) = iter.get_pixbuf() {
                     let url = &urls[&pixbuf];
-                    writer.write_all(format!("![]({})", url).as_bytes()).unwrap();
+                    writer
+                        .write_all(format!("![]({})", url).as_bytes())
+                        .unwrap();
                 } else if iter.begins_tag(Some(&h1)) {
                     writer.write_all(b"# ")?;
                 } else if iter.begins_tag(Some(&h2)) {
@@ -316,7 +334,7 @@ impl View {
         title
     }
     pub fn get_title(&self) -> String {
-        let source = self.source.try_lock().unwrap();
+        let source = self.source.lock().unwrap();
         let title = format!("{}", *source);
         let symbol = if self.text.get_modified() { "*" } else { "" };
         format!("{}{}", title, symbol)

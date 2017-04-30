@@ -10,7 +10,7 @@ use hyper::Url;
 pub enum Source {
     Unknown,
     File(PathBuf),
-    Url(Url)
+    Url(Url),
 }
 
 impl Source {
@@ -27,7 +27,7 @@ impl Source {
                 let path = path.as_path();
                 let file = File::create(path).unwrap();
                 Some(Box::new(BufWriter::new(file)))
-            },
+            }
             _ => None,
         }
     }
@@ -37,12 +37,12 @@ impl Source {
                 let path = path.as_path();
                 let file = File::open(path).unwrap();
                 Some(Box::new(BufReader::new(file)))
-            },
+            }
             Source::Url(ref url) => {
                 let client = util::make_client();
                 let res = client.get(url.clone()).send().unwrap();
                 Some(Box::new(BufReader::new(res)))
-            },
+            }
             _ => None,
         }
     }

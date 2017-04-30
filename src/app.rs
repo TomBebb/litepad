@@ -24,6 +24,7 @@ pub struct App {
     pub new: ToolButton,
     pub open: ToolButton,
     pub save: ToolButton,
+    pub close: ToolButton,
     pub tabs: Notebook,
     pub views: Arc<Mutex<Vec<View>>>,
 }
@@ -56,6 +57,9 @@ impl App {
         link.set_property_foreground(Some("blue"));
         link.set_property_underline_set(true);
         tags.add(&link);
+        let code = TextTag::new("code");
+        code.set_property_font(Some("Courier New"));
+        tags.add(&code);
         App {
             tags,
             window: builder.get_object("window").unwrap(),
@@ -67,11 +71,12 @@ impl App {
             new: builder.get_object("new").unwrap(),
             open: builder.get_object("open").unwrap(),
             save: builder.get_object("save").unwrap(),
+            close: builder.get_object("close").unwrap(),
             views: Arc::new(Mutex::new(Vec::with_capacity(16))),
         }
     }
     pub fn update_title(&self, view: Option<usize>) {
-        let views = self.views.try_lock().unwrap();
+        let views = self.views.lock().unwrap();
         if let Some(view) = views.get(view.unwrap_or(self.current_view())) {
             let title = view.update_title();
             self.window.set_title(&format!("{} - {}", title, TITLE));
@@ -81,7 +86,7 @@ impl App {
         let view = View::open(source, &self.tags);
         view.setup(self);
         {
-            let mut views = self.views.try_lock().unwrap();
+            let mut views = self.views.lock().unwrap();
             views.push(view);
         };
     }
@@ -94,12 +99,39 @@ impl App {
         filter.add_mime_type("text/markdown");
         filter.set_name("Markdown");
         let me = self.clone();
+        self.tabs.drag_dest_add_uri_targets();
+        self.tabs.drag_source_add_uri_targets();
+        self.tabs
+            .connect_drag_data_received(move |_, _, _, _, data, _, _| if let Some(uri) =
+                data.get_uris().into_iter().next() {
+                                            let view = View::open(Source::Url(Url::parse(&uri)
+                                                                                  .unwrap()),
+                                                                  &me.tags);
+                                            view.setup(&me);
+                                            {
+                                                let mut views = me.views.lock().unwrap();
+                                                views.push(view);
+                                            }
+                                        });
+        let me = self.clone();
+        self.close
+            .connect_clicked(move |_| {
+                let mut views = me.views.lock().unwrap();
+                let index = me.current_view();
+                if let Some(view) = views.get(index) {
+                    me.tabs.remove(&view.window);
+                }
+                if views.len() > 0 {
+                    views.remove(index);
+                }
+            });
+        let me = self.clone();
         self.new
             .connect_clicked(move |_| {
                                  let view = View::new(Source::Unknown, &me.tags);
                                  view.setup(&me);
                                  {
-                                     let mut views = me.views.try_lock().unwrap();
+                                     let mut views = me.views.lock().unwrap();
                                      views.push(view);
                                  }
                              });
@@ -111,13 +143,13 @@ impl App {
         let me = self.clone();
         save.connect_clicked(move |_| {
             let source = {
-                let views = views.try_lock().unwrap();
+                let views = views.lock().unwrap();
                 views
                     .get(tabs.get_property_page() as usize)
-                    .map(|v| v.source.try_lock().unwrap().clone())
+                    .map(|v| v.source.lock().unwrap().clone())
             };
             if source.is_some() {
-                let views = views.try_lock().unwrap();
+                let views = views.lock().unwrap();
                 views[tabs.get_property_page() as usize]
                     .save(Source::Unknown)
                     .unwrap();
@@ -128,55 +160,75 @@ impl App {
                 dialog.add_button("Save", 0);
                 dialog.add_button("Cancel", 1);
                 dialog.add_filter(&filter2);
-                let me = me.clone();
-                dialog.connect_response(move |dialog, id| {
-                    let me = me.clone();
-                    if id == 0 {
-                        if let Some(filename) = dialog.get_filename() {
-                            let views = me.views.try_lock().unwrap();
-                            if let Some(view) = views.get(me.current_view()) {
-                                let mut source = view.source.try_lock().unwrap();
-                                *source = Source::File(filename);
-                            }
+                let me2 = me.clone();
+                dialog.connect_file_activated(move |dialog| {
+                    let me = me2.clone();
+                    if let Some(filename) = dialog.get_filename() {
+                        let views = me.views.lock().unwrap();
+                        if let Some(view) = views.get(me.current_view()) {
+                            let mut source = view.source.lock().unwrap();
+                            *source = Source::File(filename);
                         }
                     }
                     dialog.destroy();
+                });
+                let me2 = me.clone();
+                dialog.connect_response(move |dialog, id| {
+                    let me = me2.clone();
+                    if id == 0 {
+                        if let Some(filename) = dialog.get_filename() {
+                            let views = me.views.lock().unwrap();
+                            if let Some(view) = views.get(me.current_view()) {
+                                let mut source = view.source.lock().unwrap();
+                                *source = Source::File(filename);
+                            }
+                        }
+                        dialog.destroy();
+                    }
                 });
                 dialog.show_all();
                 dialog.run();
             }
         });
         let me = self.clone();
-        self.open.connect_button_press_event(move |open, ev| {
-            if ev.get_button() == 3 {
-                // Load menu
-                let glade_src = include_str!("../load-menu.glade");
-                // Build from glade
-                let builder = Builder::new_from_string(glade_src);
-                let menu: Menu = builder.get_object("menu").unwrap();
-                let load_url: MenuItem = builder.get_object("load-url").unwrap();
-                let me = me.clone();
-                load_url.connect_activate(move |_| {
-                    let glade_src = include_str!("../url-dialog.glade");
+        self.open
+            .connect_button_press_event(move |open, ev| {
+                if ev.get_button() == 3 {
+                    // Load menu
+                    let glade_src = include_str!("../load-menu.glade");
                     // Build from glade
                     let builder = Builder::new_from_string(glade_src);
-                    let url: Entry = builder.get_object("url").unwrap();
-                    let dialog: Dialog = builder.get_object("dialog").unwrap();
+                    let menu: Menu = builder.get_object("menu").unwrap();
+                    let load_url: MenuItem = builder.get_object("load-url").unwrap();
                     let me = me.clone();
-                    let ok: Button = builder.get_object("ok").unwrap();
-                    let dialog2 = dialog.clone();
-                    ok.connect_clicked(move |_| {
-                        me.open(Source::Url(Url::parse(&url.get_text().unwrap().trim()).unwrap()));
-                        dialog2.destroy();
+                    load_url.connect_activate(move |_| {
+                        let glade_src = include_str!("../url-dialog.glade");
+                        // Build from glade
+                        let builder = Builder::new_from_string(glade_src);
+                        let url: Entry = builder.get_object("url").unwrap();
+                        let dialog: Dialog = builder.get_object("dialog").unwrap();
+                        let me = me.clone();
+                        let ok: Button = builder.get_object("ok").unwrap();
+                        let dialog2 = dialog.clone();
+                        ok.connect_clicked(move |_| {
+                                               me.open(Source::Url(Url::parse(&url.get_text()
+                                                                                   .unwrap()
+                                                                                   .trim())
+                                                                           .unwrap()));
+                                               dialog2.destroy();
+                                           });
+                        dialog.show_all();
+                        dialog.run();
                     });
-                    dialog.show_all();
-                    dialog.run();
-                });
-                // Pop it up
-                menu.popup(None::<&Widget>, Some(open), |_, _, _| true, 0, ev.get_time());
-            }
-            Inhibit(false)
-        });
+                    // Pop it up
+                    menu.popup(None::<&Widget>,
+                               Some(open),
+                               |_, _, _| true,
+                               0,
+                               ev.get_time());
+                }
+                Inhibit(false)
+            });
         let me = self.clone();
         let window2 = self.window.clone();
 
@@ -189,23 +241,31 @@ impl App {
                 dialog.add_button("Open", 0);
                 dialog.add_button("Cancel", 1);
                 dialog.add_filter(&filter);
-                let dialog2 = dialog.clone();
-                let me = me.clone();
+                let me2 = me.clone();
                 dialog.connect_response(move |dialog, id| {
-                                            if id == 0 {
-                                                if let Some(filename) = dialog2.get_filename() {
-                                                    me.open(Source::File(filename));
-                                                }
-                                            }
-                                            dialog.destroy();
-                                        });
+                    let ref me = me2;
+                    if id == 0 {
+                        if let Some(filename) = dialog.get_filename() {
+                            me.open(Source::File(filename));
+                        }
+                    }
+                    dialog.destroy();
+                });
+                let me2 = me.clone();
+                dialog.connect_file_activated(move |dialog| {
+                                                  let ref me = me2;
+                                                  if let Some(filename) = dialog.get_filename() {
+                                                      me.open(Source::File(filename));
+                                                  }
+                                                  dialog.destroy();
+                                              });
                 dialog.show_all();
                 dialog.run();
             });
         let me = self.clone();
         self.bold
             .connect_clicked(move |_| {
-                                 let views = me.views.try_lock().unwrap();
+                                 let views = me.views.lock().unwrap();
                                  if let Some(view) = views.get(me.current_view()) {
                                      view.apply_plain_tag(&me.tags.lookup("bold").unwrap());
                                  }
@@ -213,7 +273,7 @@ impl App {
         let me = self.clone();
         self.h1
             .connect_clicked(move |_| {
-                                 let views = me.views.try_lock().unwrap();
+                                 let views = me.views.lock().unwrap();
                                  if let Some(view) = views.get(me.current_view()) {
                                      view.apply_line_tag(&me.tags.lookup("h1").unwrap());
                                  }
@@ -221,7 +281,7 @@ impl App {
         let me = self.clone();
         self.h2
             .connect_clicked(move |_| {
-                                 let views = me.views.try_lock().unwrap();
+                                 let views = me.views.lock().unwrap();
                                  if let Some(view) = views.get(me.current_view()) {
                                      view.apply_line_tag(&me.tags.lookup("h2").unwrap());
                                  }

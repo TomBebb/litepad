@@ -1,6 +1,6 @@
 use app::App;
 use source::Source;
-
+use std::collections::HashMap;
 use std::io::{BufReader, Read, Error};
 use std::sync::{Arc, Mutex};
 
@@ -16,12 +16,12 @@ use gtk::*;
 
 use webbrowser;
 
-fn load_pixbufs(urls: Vec<Url>, max_width: i32) -> Vec<Option<Pixbuf>> {
+fn load_pixbufs(urls: &[Url], max_width: i32) -> Vec<Option<Pixbuf>> {
     let client = util::make_client();
     let mut bytes = Vec::with_capacity(512);
-    urls.into_iter().map(|url| {
+    urls.iter().map(|url| {
         let loader = PixbufLoader::new();
-        if let Ok(input) = client.get(url).send() {
+        if let Ok(input) = client.get(url.clone()).send() {
             let mut reader = BufReader::new(input);
             bytes.clear();
             reader.read_to_end(&mut bytes).unwrap();
@@ -55,6 +55,7 @@ pub struct View {
     pub view: TextView,
     pub window: ScrolledWindow,
     pub source: Arc<Mutex<Source>>,
+    pub image_urls: Arc<Mutex<HashMap<Pixbuf, Url>>>
 }
 
 impl View {
@@ -69,6 +70,7 @@ impl View {
             view,
             window,
             source: Arc::new(Mutex::new(source)),
+            image_urls: Arc::new(Mutex::new(HashMap::new()))
         }
     }
     pub fn setup(&self, app: &App) {
@@ -197,7 +199,7 @@ impl View {
                 _ => (),
             }
         }
-        let pixbufs = load_pixbufs(image_urls, 500);
+        let pixbufs = load_pixbufs(&image_urls, 500);
         view.text.set_text(&text);
         {
             let mut new_links = view.links.lock().unwrap();
@@ -216,10 +218,14 @@ impl View {
                 }
             }
         }
-        for (index, row, column) in image_places {
-            if let Some(ref pixbuf) = pixbufs[index] {
-                let mut place = view.text.get_iter_at_line_index(row, column);
-                view.text.insert_pixbuf(&mut place, pixbuf);
+        {
+            let mut actual_image_urls = view.image_urls.lock().unwrap();
+            for (index, row, column) in image_places {
+                if let Some(ref pixbuf) = pixbufs[index] {
+                    actual_image_urls.insert(pixbuf.clone(), image_urls[index].clone());
+                    let mut place = view.text.get_iter_at_line_index(row, column);
+                    view.text.insert_pixbuf(&mut place, pixbuf);
+                }
             }
         }
         view
@@ -263,8 +269,12 @@ impl View {
             let h1 = table.lookup("h1").unwrap();
             let h2 = table.lookup("h2").unwrap();
             let mut unclosed_tags = Vec::new();
+            let urls = self.image_urls.lock().unwrap();
             loop {
-                if iter.begins_tag(Some(&h1)) {
+                if let Some(pixbuf) = iter.get_pixbuf() {
+                    let url = &urls[&pixbuf];
+                    writer.write_all(format!("![]({})", url).as_bytes()).unwrap();
+                } else if iter.begins_tag(Some(&h1)) {
                     writer.write_all(b"# ")?;
                 } else if iter.begins_tag(Some(&h2)) {
                     writer.write_all(b"## ")?;

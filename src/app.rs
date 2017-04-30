@@ -52,6 +52,10 @@ impl App {
         let italic = TextTag::new("italic");
         bold.set_property_style_set(true);
         tags.add(&italic);
+        let link = TextTag::new("link");
+        link.set_property_foreground(Some("blue"));
+        link.set_property_underline_set(true);
+        tags.add(&link);
         App {
             tags,
             window: builder.get_object("window").unwrap(),

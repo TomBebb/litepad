@@ -1,11 +1,41 @@
 use app::App;
 use source::Source;
-use gtk::*;
 
+use std::io::{BufReader, Read, Error};
 use std::sync::{Arc, Mutex};
-use std::io::Error;
 
 use pulldown_cmark::{Parser, Event, Tag};
+
+use gdk_pixbuf::{Pixbuf, PixbufLoader, InterpType};
+
+use hyper::client::Client;
+use hyper::Url;
+
+use gtk::*;
+
+fn load_pixbufs(urls: Vec<Url>, max_width: i32) -> Vec<Option<Pixbuf>> {
+    let client = Client::new();
+    let mut bytes = Vec::with_capacity(512);
+    urls.into_iter().map(|url| {
+        let loader = PixbufLoader::new();
+        if let Ok(input) = client.get(url).send() {
+            let mut reader = BufReader::new(input);
+            bytes.clear();
+            reader.read_to_end(&mut bytes).unwrap();
+            loader.loader_write(&bytes).unwrap();
+            loader.close().unwrap();
+            let mut image = loader.get_pixbuf().unwrap();
+            let (width, height) = (image.get_width(), image.get_height());
+            if width > max_width {
+                let (new_width, new_height) = (max_width, (height * max_width) / width);
+                image = image.scale_simple(new_width, new_height, InterpType::Bilinear).unwrap();
+            }
+            Some(image)
+        } else {
+            None
+        }
+    }).collect()
+}
 
 
 #[derive(Clone)]
@@ -85,7 +115,10 @@ impl View {
         let mut row = 0;
         let mut column = 0;
         let mut text = String::with_capacity(orig_text.len());
+        let mut image_urls = Vec::new();
+        let mut image_places = Vec::new();
         for event in parser {
+            println!("{:?}", event);
             match event {
                 Event::SoftBreak |
                 Event::HardBreak |
@@ -95,6 +128,10 @@ impl View {
                     column = 0;
                 }
                 Event::Start(tag) => tag_starts.push((tag, row, column)),
+                Event::End(Tag::Image(ref url, _)) => {
+                    image_places.push((image_urls.len(), row, column));
+                    image_urls.push(Url::parse(&url).unwrap());
+                },
                 Event::End(_) => {
                     let (tag, start_row, start_column) = tag_starts.pop().unwrap();
                     let name = match tag {
@@ -107,7 +144,8 @@ impl View {
                                      2 => "h2",
                                      _ => "h3",
                                  })
-                        }
+                        },
+                        Tag::Link(_, _) => Some("link"),
                         Tag::Strong => Some("bold"),
                         Tag::Emphasis => Some("italic"),
                         _ => None,
@@ -123,11 +161,18 @@ impl View {
                 _ => (),
             }
         }
+        let pixbufs = load_pixbufs(image_urls, 500);
         view.text.set_text(&text);
         for (tag, start_row, start_column, row, column) in tag_defs {
             let start = view.text.get_iter_at_line_index(start_row, start_column);
             let end = view.text.get_iter_at_line_index(row, column);
             view.text.apply_tag_by_name(tag, &start, &end);
+        }
+        for (index, row, column) in image_places {
+            if let Some(ref pixbuf) = pixbufs[index] {
+                let mut place = view.text.get_iter_at_line_index(row, column);
+                view.text.insert_pixbuf(&mut place, pixbuf);
+            }
         }
         view
     }

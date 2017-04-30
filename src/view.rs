@@ -8,13 +8,18 @@ use pulldown_cmark::{Parser, Event, Tag};
 
 use gdk_pixbuf::{Pixbuf, PixbufLoader, InterpType};
 
-use hyper::client::Client;
-use hyper::Url;
+use hyper::net::HttpsConnector;
+use hyper::{Client, Url};
+use hyper_native_tls::NativeTlsClient;
 
 use gtk::*;
 
+use webbrowser;
+
 fn load_pixbufs(urls: Vec<Url>, max_width: i32) -> Vec<Option<Pixbuf>> {
-    let client = Client::new();
+    let ssl = NativeTlsClient::new().unwrap();
+    let connector = HttpsConnector::new(ssl);
+    let client = Client::with_connector(connector);
     let mut bytes = Vec::with_capacity(512);
     urls.into_iter().map(|url| {
         let loader = PixbufLoader::new();
@@ -37,12 +42,20 @@ fn load_pixbufs(urls: Vec<Url>, max_width: i32) -> Vec<Option<Pixbuf>> {
     }).collect()
 }
 
+#[derive(Clone)]
+pub struct MetaIter<T> {
+    pub start: TextIter,
+    pub end: TextIter,
+    pub data: T
+}
 
 #[derive(Clone)]
 pub struct View {
     pub label: Label,
+    pub links: Arc<Mutex<Vec<MetaIter<String>>>>,
     pub text: TextBuffer,
     pub view: TextView,
+    pub window: ScrolledWindow,
     pub source: Arc<Mutex<Source>>,
 }
 
@@ -50,18 +63,34 @@ impl View {
     pub fn new(source: Source, tags: &TextTagTable) -> View {
         let buffer = TextBuffer::new(Some(tags));
         let view = TextView::new_with_buffer(&buffer);
+        let window = ScrolledWindow::new(None, None);
         View {
             label: Label::new(format!("{}", source).as_str()),
             text: buffer,
+            links: Arc::new(Mutex::new(Vec::new())),
             view,
+            window,
             source: Arc::new(Mutex::new(source)),
         }
     }
     pub fn setup(&self, app: &App) {
-        let hbox = Box::new(Orientation::Horizontal, 2);
-        hbox.add(&self.view);
+        self.window.add(&self.view);
         let event_box = EventBox::new();
         event_box.add(&self.label);
+        let links = self.links.clone();
+        self.view.connect_button_press_event(move |text, ev| {
+            let (x, y) = ev.get_position();
+            let links = links.lock().unwrap();
+            if let Some(iter) = text.get_iter_at_location(x as i32, y as i32) {
+                for link in links.iter() {
+                    if link.start <= iter && link.end >= iter {
+                        webbrowser::open(&link.data).unwrap();
+                        break;
+                    }
+                }
+            }
+            Inhibit(false)
+        });
         let app2 = app.clone();
         let source = self.source.clone();
         event_box.connect_button_press_event(move |me, ev| {
@@ -100,10 +129,10 @@ impl View {
             }
             Inhibit(false)
         });
-        app.tabs.append_page(&hbox, Some(&event_box));
+        app.tabs.append_page(&self.window, Some(&event_box));
         event_box.show_all();
         app.tabs.set_current_page(None);
-        hbox.show_all();
+        self.window.show_all();
     }
 
     pub fn open(source: Source, tags: &TextTagTable) -> View {
@@ -117,6 +146,7 @@ impl View {
         let mut text = String::with_capacity(orig_text.len());
         let mut image_urls = Vec::new();
         let mut image_places = Vec::new();
+        let mut links = Vec::new();
         for event in parser {
             println!("{:?}", event);
             match event {
@@ -145,7 +175,10 @@ impl View {
                                      _ => "h3",
                                  })
                         },
-                        Tag::Link(_, _) => Some("link"),
+                        Tag::Link(url, _) => {
+                            links.push(url);
+                            Some("link")
+                        },
                         Tag::Strong => Some("bold"),
                         Tag::Emphasis => Some("italic"),
                         _ => None,
@@ -163,10 +196,22 @@ impl View {
         }
         let pixbufs = load_pixbufs(image_urls, 500);
         view.text.set_text(&text);
-        for (tag, start_row, start_column, row, column) in tag_defs {
-            let start = view.text.get_iter_at_line_index(start_row, start_column);
-            let end = view.text.get_iter_at_line_index(row, column);
-            view.text.apply_tag_by_name(tag, &start, &end);
+        {
+            let mut new_links = view.links.lock().unwrap();
+            let mut link = 0;
+            for (tag, start_row, start_column, row, column) in tag_defs {
+                let start = view.text.get_iter_at_line_index(start_row, start_column);
+                let end = view.text.get_iter_at_line_index(row, column);
+                view.text.apply_tag_by_name(tag, &start, &end);
+                if tag == "link" {
+                    new_links.push(MetaIter {
+                        start: start,
+                        end: end,
+                        data: links[link].to_string()
+                    });
+                    link += 1;
+                }
+            }
         }
         for (index, row, column) in image_places {
             if let Some(ref pixbuf) = pixbufs[index] {

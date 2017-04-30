@@ -1,7 +1,9 @@
 extern crate gtk;
 extern crate gdk_pixbuf;
 extern crate pulldown_cmark;
+extern crate hyper_native_tls;
 extern crate hyper;
+extern crate webbrowser;
 
 mod app;
 mod source;

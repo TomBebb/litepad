@@ -14,7 +14,9 @@ license = "GPLv3"
 travis-ci = { repository = "TomBebb/litepad", branch = "master" }
 
 [dependencies]
+webbrowser = "^0.2.2"
 gdk-pixbuf = "*"
+hyper-native-tls = "*"
 hyper = "^0.10.9"
 gtk = { version = "^0.1.2", features = [ "v3_16" ] }
 pulldown-cmark = { version = "^0.0.11", default-features = false }

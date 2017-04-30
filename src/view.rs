@@ -19,7 +19,8 @@ use webbrowser;
 fn is_block(tag: &Tag) -> bool {
     match *tag {
         Tag::Header(_) |
-        Tag::CodeBlock(_) => true,
+        Tag::CodeBlock(_) | 
+        Tag::Item => true,
         _ => false,
     }
 }
@@ -169,11 +170,20 @@ impl View {
                     text.push('\n');
                     row += 1;
                     column = 0;
-                }
-                Event::Start(Tag::Image(_, _)) => {
-                    in_image = true;
-                }
-                Event::Start(tag) => tag_starts.push((tag, row, column)),
+                },
+                Event::Start(tag) => {
+                    match tag {
+                        Tag::Image(_, _) => {
+                            in_image = true;
+                        },
+                        Tag::Item => {
+                            text.push_str("• ");
+                            column += 2;
+                        },
+                        _ => ()
+                    }
+                    tag_starts.push((tag, row, column))
+                },
                 Event::End(Tag::Image(ref url, _)) => {
                     image_places.push((image_urls.len(), row, column));
                     image_urls.push(Url::parse(&url).unwrap());
@@ -187,6 +197,7 @@ impl View {
                     let name = match tag {
                         Tag::Code |
                         Tag::CodeBlock(_) => Some("code"),
+                        Tag::Item => Some("item"),
                         Tag::Header(n) => {
                             column = 0;
                             row += 1;

@@ -47,6 +47,9 @@ impl App {
         h3.set_property_weight(700);
         h3.set_property_scale(H3_SCALE);
         tags.add(&h3);
+        let item_start = TextTag::new("item");
+        item_start.set_property_weight(700);
+        tags.add(&item_start);
         let bold = TextTag::new("bold");
         bold.set_property_weight(700);
         tags.add(&bold);

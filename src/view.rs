@@ -20,7 +20,7 @@ use webbrowser;
 fn is_block(tag: &Tag) -> bool {
     match *tag {
         Tag::Header(_) |
-        Tag::CodeBlock(_) | 
+        Tag::CodeBlock(_) |
         Tag::Item => true,
         _ => false,
     }
@@ -153,13 +153,13 @@ impl View {
         let orig_text = source.load();
         let view = View::new(source, tags);
         let parser = Parser::new(&orig_text);
-        let mut post_ops: Vec<Box<Fn(&TextView, &TextBuffer, &[Option<Pixbuf>])>> = Vec::with_capacity(4);
+        let mut post_ops: Vec<Box<Fn(&TextView, &TextBuffer, &[Option<Pixbuf>])>> =
+            Vec::with_capacity(4);
         let mut tag_starts = Vec::with_capacity(4);
         let mut tag_defs = Vec::new();
         let mut row = 0;
         let mut column = 0;
         let mut text = String::with_capacity(orig_text.len());
-        let mut links = Vec::new();
         let mut in_image = false;
         let mut image_urls = Vec::new();
         for event in parser {
@@ -171,7 +171,7 @@ impl View {
                     text.push('\n');
                     row += 1;
                     column = 0;
-                },
+                }
                 Event::End(Tag::Rule) => {
                     let (sep_row, sep_column) = (row, column);
                     post_ops.push(Box::new(move |view, buf, _| {
@@ -182,20 +182,20 @@ impl View {
                         }
 
                     }));
-                },
+                }
                 Event::Start(tag) => {
                     match tag {
                         Tag::Image(_, _) => {
                             in_image = true;
-                        },
+                        }
                         Tag::Item => {
                             text.push_str("• ");
                             column += 2;
-                        },
-                        _ => ()
+                        }
+                        _ => (),
                     }
                     tag_starts.push((tag, row, column))
-                },
+                }
                 Event::End(Tag::Image(ref url, _)) => {
                     let url = Url::parse(&url).unwrap();
                     let (img_row, img_col) = (row, column);
@@ -232,7 +232,19 @@ impl View {
                                  })
                         }
                         Tag::Link(url, _) => {
-                            links.push(url);
+                            let links = view.links.clone();
+                            let (end_row, end_col) = (row, column);
+                            post_ops.push(Box::new(move |_, buf, _| {
+                                let mut new_links = links.lock().unwrap();
+                                let start = buf.get_iter_at_line_index(start_row, start_column);
+                                let end = buf.get_iter_at_line_index(end_row, end_col);
+                                buf.apply_tag_by_name("link", &start, &end);
+                                new_links.push(MetaIter {
+                                                   start: start,
+                                                   end: end,
+                                                   data: url.to_string(),
+                                               });
+                            }));
                             Some("link")
                         }
                         Tag::Strong => Some("bold"),
@@ -252,23 +264,6 @@ impl View {
         }
         let pixbufs = load_pixbufs(&image_urls, 500);
         view.text.set_text(&text);
-        {
-            let mut new_links = view.links.lock().unwrap();
-            let mut link = 0;
-            for (tag, start_row, start_column, row, column) in tag_defs {
-                let start = view.text.get_iter_at_line_index(start_row, start_column);
-                let end = view.text.get_iter_at_line_index(row, column);
-                view.text.apply_tag_by_name(tag, &start, &end);
-                if tag == "link" {
-                    new_links.push(MetaIter {
-                                       start: start,
-                                       end: end,
-                                       data: links[link].to_string(),
-                                   });
-                    link += 1;
-                }
-            }
-        }
         for op in post_ops {
             op(&view.view, &view.text, pixbufs.as_slice());
         }

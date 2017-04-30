@@ -1,16 +1,16 @@
 use app::App;
 use source::Source;
 use std::collections::HashMap;
-use std::io::{BufReader, Read, Error};
+use std::io::Error;
 use std::sync::{Arc, Mutex};
 
 use pulldown_cmark::{Parser, Event, Tag};
 
-use gdk_pixbuf::{Pixbuf, PixbufLoader, InterpType};
-
 use hyper::Url;
 
 use util;
+
+use gdk_pixbuf::Pixbuf;
 
 use gtk::*;
 use std::boxed::Box;
@@ -25,35 +25,6 @@ fn is_block(tag: &Tag) -> bool {
         _ => false,
     }
 }
-
-fn load_pixbufs(urls: &[Url], max_width: i32) -> Vec<Option<Pixbuf>> {
-    let client = util::make_client();
-    let mut bytes = Vec::with_capacity(512);
-    urls.iter()
-        .map(|url| {
-            let loader = PixbufLoader::new();
-            if let Ok(input) = client.get(url.clone()).send() {
-                let mut reader = BufReader::new(input);
-                bytes.clear();
-                reader.read_to_end(&mut bytes).unwrap();
-                loader.loader_write(&bytes).unwrap();
-                loader.close().unwrap();
-                let mut image = loader.get_pixbuf().unwrap();
-                let (width, height) = (image.get_width(), image.get_height());
-                if width > max_width {
-                    let (new_width, new_height) = (max_width, (height * max_width) / width);
-                    image = image
-                        .scale_simple(new_width, new_height, InterpType::Bilinear)
-                        .unwrap();
-                }
-                Some(image)
-            } else {
-                None
-            }
-        })
-        .collect()
-}
-
 #[derive(Clone)]
 pub struct MetaIter<T> {
     pub start: TextIter,
@@ -261,7 +232,7 @@ impl View {
                 _ => (),
             }
         }
-        let pixbufs = load_pixbufs(&image_urls, 500);
+        let pixbufs = util::load_pixbufs(&image_urls, 500);
         view.text.set_text(&text);
         for op in post_ops {
             op(&view.view, &view.text, pixbufs.as_slice());

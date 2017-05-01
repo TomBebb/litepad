@@ -59,7 +59,9 @@ impl View {
     pub fn link(&self, url: Url) {
         if let Some((start, end)) = self.text.get_selection_bounds() {
             self.text.apply_tag_by_name("link", &start, &end);
-            let mark = TextMark::new(url.to_string().as_str(), false);
+            let url = url.to_string();
+            let mark = TextMark::new(Some(url.as_str()), false);
+            mark.set_property_name(Some(url.as_str()));
             self.text.add_mark(&mark, &start);
         }
     }
@@ -230,7 +232,9 @@ impl View {
                                 let start = buf.get_iter_at_line_index(start_row, start_column);
                                 let end = buf.get_iter_at_line_index(end_row, end_col);
                                 buf.apply_tag_by_name("link", &start, &end);
-                                let mark = TextMark::new(url.to_string().as_str(), false);
+                                let url = url.to_string();
+                                let mark = TextMark::new(url.as_str(), false);
+                                mark.set_property_name(Some(url.as_str()));
                                 buf.add_mark(&mark, &start);
                             }));
                             Some("link")
@@ -295,14 +299,20 @@ impl View {
             let italic = table.lookup("italic").unwrap();
             let h1 = table.lookup("h1").unwrap();
             let h2 = table.lookup("h2").unwrap();
+            let link = table.lookup("link").unwrap();
             let mut unclosed_tags = Vec::new();
             let urls = self.image_urls.lock().unwrap();
             loop {
-                if let Some(pixbuf) = iter.get_pixbuf() {
-                    let url = &urls[&pixbuf];
+                let marks = iter.get_marks();
+                if let Some(url) = marks.into_iter().filter_map(|m| m.get_name()).next() {
+                    let start = iter.clone();
+                    iter.forward_to_tag_toggle(Some(&link));
+                    let text = buffer.get_slice(&start, &iter, false).unwrap();
                     writer
-                        .write_all(format!("![]({})", url).as_bytes())
-                        .unwrap();
+                        .write_all(format!("[{}]({})", text, url).as_bytes())?
+                } else if let Some(pixbuf) = iter.get_pixbuf() {
+                    let url = &urls[&pixbuf];
+                    writer.write_all(format!("![]({})", url).as_bytes())?
                 } else if iter.begins_tag(Some(&h1)) {
                     writer.write_all(b"# ")?;
                 } else if iter.begins_tag(Some(&h2)) {

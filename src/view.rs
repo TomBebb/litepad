@@ -139,6 +139,38 @@ impl View {
             }
             Inhibit(false)
         });
+        let tags = app.tags.clone();
+        let me = self.clone();
+        self.text
+            .connect_changed(move |text| {
+                let cursor = text.get_property_cursor_position();
+                let mut iter = text.get_iter_at_offset(cursor);
+                iter.backward_char();
+                // If the last character was a new line
+                if iter.get_char() == Some('\n') {
+
+                    let end = iter.clone();
+                    iter.forward_char();
+                    iter.backward_line();
+                    let mut true_start = iter.clone();
+                    let ch = iter.get_char();
+                    match ch {
+                        Some('#') => {
+                            let mut start = iter.clone();
+                            let mut level = 1;
+                            while start.forward_char() && start.get_char() == Some('#') {
+                                level += 1;
+                            }
+                            while start.get_char() == Some(' ') && start.forward_char() {}
+                            me.line_tag(&tags.lookup(&format!("h{}", level)).unwrap(),
+                                        &start,
+                                        &end);
+                            text.delete(&mut true_start, &mut start);
+                        }
+                        _ => (),
+                    }
+                }
+            });
         app.tabs.append_page(&self.window, Some(&event_box));
         event_box.show_all();
         app.tabs.set_current_page(None);
@@ -263,17 +295,20 @@ impl View {
     }
     pub fn apply_line_tag(&self, tag: &TextTag) {
         if let Some((start, end)) = self.text.get_selection_bounds() {
-            let mut line_end = end.clone();
-            line_end.forward_line();
-            line_end.backward_char();
-            let mut line_start = start.clone();
-            line_start.backward_line();
-            let mut iter = line_start.clone();
-            if iter.forward_to_tag_toggle(Some(tag)) && iter <= line_end {
-                self.text.remove_tag(tag, &line_start, &line_end);
-            } else {
-                self.text.apply_tag(tag, &line_start, &line_end);
-            }
+            self.line_tag(tag, &start, &end);
+        }
+    }
+    pub fn line_tag(&self, tag: &TextTag, start: &TextIter, end: &TextIter) {
+        let mut line_end = end.clone();
+        line_end.forward_line();
+        line_end.backward_char();
+        let mut line_start = start.clone();
+        line_start.backward_line();
+        let mut iter = line_start.clone();
+        if iter.forward_to_tag_toggle(Some(tag)) && iter <= line_end {
+            self.text.remove_tag(tag, &line_start, &line_end);
+        } else {
+            self.text.apply_tag(tag, &line_start, &line_end);
         }
     }
     pub fn apply_plain_tag(&self, tag: &TextTag) {
@@ -312,7 +347,7 @@ impl View {
                         .write_all(format!("[{}]({})", text, url).as_bytes())?
                 } else if let Some(pixbuf) = iter.get_pixbuf() {
                     let url = &urls[&pixbuf];
-                    writer.write_all(format!("![]({})", url).as_bytes())?
+                    writer.write_all(format!("![]({})\n", url).as_bytes())?
                 } else if iter.begins_tag(Some(&h1)) {
                     writer.write_all(b"# ")?;
                 } else if iter.begins_tag(Some(&h2)) {

@@ -58,6 +58,30 @@ impl View {
             image_urls: Arc::new(Mutex::new(HashMap::new())),
         }
     }
+    pub fn link(&self, url: Url) {
+        if let Some((start, end)) = self.text.get_selection_bounds() {
+            let mut links = self.links.lock().unwrap();
+            self.text.apply_tag_by_name("link", &start, &end);
+            links.push(MetaIter {
+                           start: start,
+                           end: end,
+                           data: url.to_string(),
+                       });
+        }
+    }
+    pub fn image(&self, url: Url) {
+        if let Some((mut start, mut end)) = self.text.get_selection_bounds() {
+            let mut image_urls = self.image_urls.lock().unwrap();
+            let ref pixbuf = util::load_pixbufs(&[url.clone()], 500)[0];
+            // If the image has loaded
+            if let Some(ref pixbuf) = *pixbuf {
+                image_urls.insert(pixbuf.clone(), url);
+                let alt = self.text.get_slice(&start, &end, false);
+                self.text.insert_pixbuf(&mut start, pixbuf);
+                self.text.delete(&mut start, &mut end);
+            }
+        }
+    }
     pub fn setup(&self, app: &App) {
         self.window.add(&self.view);
         let event_box = EventBox::new();

@@ -25,6 +25,7 @@ pub struct App {
     pub open: ToolButton,
     pub save: ToolButton,
     pub close: ToolButton,
+    pub insert_image: ToolButton,
     pub tabs: Notebook,
     pub views: Arc<Mutex<Vec<View>>>,
 }
@@ -75,6 +76,7 @@ impl App {
             open: builder.get_object("open").unwrap(),
             save: builder.get_object("save").unwrap(),
             close: builder.get_object("close").unwrap(),
+            insert_image: builder.get_object("insert-image").unwrap(),
             views: Arc::new(Mutex::new(Vec::with_capacity(16))),
         }
     }
@@ -193,6 +195,7 @@ impl App {
                 dialog.run();
             }
         });
+        let url_dialog_src = include_str!("../url-dialog.glade");
         let me = self.clone();
         self.open
             .connect_button_press_event(move |open, ev| {
@@ -205,9 +208,8 @@ impl App {
                     let load_url: MenuItem = builder.get_object("load-url").unwrap();
                     let me = me.clone();
                     load_url.connect_activate(move |_| {
-                        let glade_src = include_str!("../url-dialog.glade");
                         // Build from glade
-                        let builder = Builder::new_from_string(glade_src);
+                        let builder = Builder::new_from_string(url_dialog_src);
                         let url: Entry = builder.get_object("url").unwrap();
                         let dialog: Dialog = builder.get_object("dialog").unwrap();
                         let me = me.clone();
@@ -292,7 +294,27 @@ impl App {
         let me = self.clone();
         self.tabs
             .connect_switch_page(move |_, _, id| { me.update_title(Some(id as usize)); });
+        let me = self.clone();
+        self.insert_image
+            .connect_clicked(move |_| {
+                // Build from glade
+                let builder = Builder::new_from_string(url_dialog_src);
+                let url: Entry = builder.get_object("url").unwrap();
+                let dialog: Dialog = builder.get_object("dialog").unwrap();
+                let me = me.clone();
+                let ok: Button = builder.get_object("ok").unwrap();
+                let dialog2 = dialog.clone();
+                ok.connect_clicked(move |_| {
 
+                    let views = me.views.lock().unwrap();
+                    if let Some(view) = views.get(me.current_view()) {
+                        view.image(Url::parse(&url.get_text().unwrap().trim()).unwrap());
+                    }
+                    dialog2.destroy();
+                });
+                dialog.show_all();
+                dialog.run();
+            });
         self.window
             .connect_delete_event(|_, _| {
                                       main_quit();

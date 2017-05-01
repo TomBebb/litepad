@@ -25,6 +25,7 @@ pub struct App {
     pub open: ToolButton,
     pub save: ToolButton,
     pub close: ToolButton,
+    pub insert_link: ToolButton,
     pub insert_image: ToolButton,
     pub tabs: Notebook,
     pub views: Arc<Mutex<Vec<View>>>,
@@ -76,6 +77,7 @@ impl App {
             open: builder.get_object("open").unwrap(),
             save: builder.get_object("save").unwrap(),
             close: builder.get_object("close").unwrap(),
+            insert_link: builder.get_object("insert-link").unwrap(),
             insert_image: builder.get_object("insert-image").unwrap(),
             views: Arc::new(Mutex::new(Vec::with_capacity(16))),
         }
@@ -98,10 +100,8 @@ impl App {
     pub fn setup(&self) {
         self.tabs.remove_page(None);
         let filter = FileFilter::new();
-        filter.add_pattern("*.md");
-        filter.add_pattern("*.txt");
-        filter.add_pattern("*.markdown");
         filter.add_mime_type("text/markdown");
+        filter.add_mime_type("text/plain");
         filter.set_name("Markdown");
         let me = self.clone();
         self.tabs.drag_dest_add_uri_targets();
@@ -309,6 +309,27 @@ impl App {
                     let views = me.views.lock().unwrap();
                     if let Some(view) = views.get(me.current_view()) {
                         view.image(Url::parse(&url.get_text().unwrap().trim()).unwrap());
+                    }
+                    dialog2.destroy();
+                });
+                dialog.show_all();
+                dialog.run();
+            });
+        let me = self.clone();
+        self.insert_link
+            .connect_clicked(move |_| {
+                // Build from glade
+                let builder = Builder::new_from_string(url_dialog_src);
+                let url: Entry = builder.get_object("url").unwrap();
+                let dialog: Dialog = builder.get_object("dialog").unwrap();
+                let me = me.clone();
+                let ok: Button = builder.get_object("ok").unwrap();
+                let dialog2 = dialog.clone();
+                ok.connect_clicked(move |_| {
+
+                    let views = me.views.lock().unwrap();
+                    if let Some(view) = views.get(me.current_view()) {
+                        view.link(Url::parse(&url.get_text().unwrap().trim()).unwrap());
                     }
                     dialog2.destroy();
                 });

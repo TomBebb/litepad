@@ -15,7 +15,7 @@ const H3_SCALE: f64 = 1.2;
 
 #[derive(Clone)]
 pub struct App {
-    tags: TextTagTable,
+    pub tags: TextTagTable,
     pub window: Window,
     pub italic: ToolButton,
     pub bold: ToolButton,

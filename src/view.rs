@@ -35,7 +35,6 @@ pub struct MetaIter<T> {
 #[derive(Clone)]
 pub struct View {
     pub label: Label,
-    pub links: Arc<Mutex<Vec<MetaIter<String>>>>,
     pub text: TextBuffer,
     pub view: TextView,
     pub window: ScrolledWindow,
@@ -51,7 +50,6 @@ impl View {
         View {
             label: Label::new(format!("{}", source).as_str()),
             text: buffer,
-            links: Arc::new(Mutex::new(Vec::new())),
             view,
             window,
             source: Arc::new(Mutex::new(source)),
@@ -60,13 +58,9 @@ impl View {
     }
     pub fn link(&self, url: Url) {
         if let Some((start, end)) = self.text.get_selection_bounds() {
-            let mut links = self.links.lock().unwrap();
             self.text.apply_tag_by_name("link", &start, &end);
-            links.push(MetaIter {
-                           start: start,
-                           end: end,
-                           data: url.to_string(),
-                       });
+            let mark = TextMark::new(url.to_string().as_str(), false);
+            self.text.add_mark(&mark, &start);
         }
     }
     pub fn image(&self, url: Url) {
@@ -86,16 +80,21 @@ impl View {
         self.window.add(&self.view);
         let event_box = EventBox::new();
         event_box.add(&self.label);
-        let links = self.links.clone();
+        let tags = app.tags.clone();
         self.view
             .connect_button_press_event(move |text, ev| {
                 let (x, y) = ev.get_position();
-                let links = links.lock().unwrap();
-                if let Some(iter) = text.get_iter_at_location(x as i32, y as i32) {
-                    for link in links.iter() {
-                        if link.start <= iter && link.end >= iter {
-                            webbrowser::open(&link.data).unwrap();
-                            break;
+                if let Some(mut iter) = text.get_iter_at_location(x as i32, y as i32) {
+                    if iter.has_tag(&tags.lookup("link").unwrap()) {
+                        let mut marks;
+                        loop {
+                            marks = iter.get_marks();
+                            if marks.len() != 0 || !iter.backward_char() {
+                                break;
+                            }
+                        }
+                        if let Some(url) = marks.get(0).and_then(TextMark::get_name) {
+                            webbrowser::open(&url).unwrap();
                         }
                     }
                 }
@@ -226,18 +225,13 @@ impl View {
                                  })
                         }
                         Tag::Link(url, _) => {
-                            let links = view.links.clone();
                             let (end_row, end_col) = (row, column);
                             post_ops.push(Box::new(move |_, buf, _| {
-                                let mut new_links = links.lock().unwrap();
                                 let start = buf.get_iter_at_line_index(start_row, start_column);
                                 let end = buf.get_iter_at_line_index(end_row, end_col);
                                 buf.apply_tag_by_name("link", &start, &end);
-                                new_links.push(MetaIter {
-                                                   start: start,
-                                                   end: end,
-                                                   data: url.to_string(),
-                                               });
+                                let mark = TextMark::new(url.to_string().as_str(), false);
+                                buf.add_mark(&mark, &start);
                             }));
                             Some("link")
                         }

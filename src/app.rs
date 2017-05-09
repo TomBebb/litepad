@@ -3,6 +3,8 @@ use view::View;
 
 use gtk::*;
 
+use pango::Style;
+
 use std::sync::{Arc, Mutex};
 
 use hyper::Url;
@@ -56,7 +58,8 @@ impl App {
         bold.set_property_weight(700);
         tags.add(&bold);
         let italic = TextTag::new("italic");
-        bold.set_property_style_set(true);
+        italic.set_property_style(Style::Italic);
+        italic.set_property_style_set(true);
         tags.add(&italic);
         let link = TextTag::new("link");
         link.set_property_foreground(Some("blue"));
@@ -109,9 +112,11 @@ impl App {
         self.tabs
             .connect_drag_data_received(move |_, _, _, _, data, _, _| if let Some(uri) =
                 data.get_uris().into_iter().next() {
-                                            let view = View::open(Source::Url(Url::parse(&uri)
-                                                                                  .unwrap()),
-                                                                  &me.tags);
+                                            let view =
+                                                View::open(Source::Url(Url::parse(&uri)
+                                                                           .ok()
+                                                                           .expect("Invalid URL")),
+                                                           &me.tags);
                                             view.setup(&me);
                                             {
                                                 let mut views = me.views.lock().unwrap();
@@ -157,7 +162,8 @@ impl App {
                 let views = views.lock().unwrap();
                 views[tabs.get_property_page() as usize]
                     .save(Source::Unknown)
-                    .unwrap();
+                    .ok()
+                    .expect("Failed to save");
             } else {
                 let dialog = FileChooserDialog::new(Some("Select a file"),
                                                     Some(&window),
@@ -308,7 +314,9 @@ impl App {
 
                     let views = me.views.lock().unwrap();
                     if let Some(view) = views.get(me.current_view()) {
-                        view.image(Url::parse(&url.get_text().unwrap().trim()).unwrap());
+                        view.image(Url::parse(&url.get_text().unwrap().trim())
+                                       .ok()
+                                       .expect("Failed to parse URL"));
                     }
                     dialog2.destroy();
                 });
@@ -329,7 +337,9 @@ impl App {
 
                     let views = me.views.lock().unwrap();
                     if let Some(view) = views.get(me.current_view()) {
-                        view.link(Url::parse(&url.get_text().unwrap().trim()).unwrap());
+                        view.link(Url::parse(&url.get_text().unwrap().trim())
+                                      .ok()
+                                      .expect("Failed to parse URL"));
                     }
                     dialog2.destroy();
                 });

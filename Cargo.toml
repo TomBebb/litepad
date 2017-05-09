@@ -19,6 +19,7 @@ gdk-pixbuf = "*"
 hyper-native-tls = "*"
 hyper = "^0.10.9"
 pulldown-cmark = { version = "^0.0.11" }
+pango = "^0.1.2"
 
 [dependencies.gtk]
 version = "^0.1.2"

@@ -1,5 +1,6 @@
 extern crate gtk;
 extern crate gdk_pixbuf;
+extern crate pango;
 extern crate pulldown_cmark;
 extern crate hyper_native_tls;
 extern crate hyper;

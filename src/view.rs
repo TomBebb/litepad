@@ -95,7 +95,9 @@ impl View {
                             }
                         }
                         if let Some(url) = marks.get(0).and_then(TextMark::get_name) {
-                            webbrowser::open(&url).unwrap();
+                            webbrowser::open(&url)
+                                .ok()
+                                .expect("Failed to open web browser");
                         }
                     }
                 }

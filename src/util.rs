@@ -12,7 +12,7 @@ use std::io::{BufReader, Read};
 
 /// Make a HTTPS-compatible client
 pub fn make_client() -> Client {
-    let ssl = NativeTlsClient::new().unwrap();
+    let ssl = NativeTlsClient::new().ok().expect("Failed to make TLS client");
     let connector = HttpsConnector::new(ssl);
     Client::with_connector(connector)
 }
@@ -30,15 +30,16 @@ pub fn load_pixbufs(urls: &[Url], max_width: i32) -> Vec<Option<Pixbuf>> {
                 reader.read_to_end(&mut bytes).unwrap();
                 loader.loader_write(&bytes).unwrap();
                 loader.close().unwrap();
-                let mut image = loader.get_pixbuf().unwrap();
-                let (width, height) = (image.get_width(), image.get_height());
-                if width > max_width {
-                    let (new_width, new_height) = (max_width, (height * max_width) / width);
-                    image = image
-                        .scale_simple(new_width, new_height, InterpType::Bilinear)
-                        .unwrap();
-                }
-                Some(image)
+                if let Some(mut image) = loader.get_pixbuf() {
+                    let (width, height) = (image.get_width(), image.get_height());
+                    if width > max_width {
+                        let (new_width, new_height) = (max_width, (height * max_width) / width);
+                        image = image
+                            .scale_simple(new_width, new_height, InterpType::Bilinear)
+                            .unwrap();
+                    }
+                    Some(image)
+                } else { None }
             } else {
                 None
             }

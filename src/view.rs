@@ -61,7 +61,6 @@ impl View {
             self.text.apply_tag_by_name("link", &start, &end);
             let url = url.to_string();
             let mark = TextMark::new(Some(url.as_str()), false);
-            mark.set_property_name(Some(url.as_str()));
             self.text.add_mark(&mark, &start);
         }
     }
@@ -266,7 +265,6 @@ impl View {
                                 buf.apply_tag_by_name("link", &start, &end);
                                 let url = url.to_string();
                                 let mark = TextMark::new(url.as_str(), false);
-                                mark.set_property_name(Some(url.as_str()));
                                 buf.add_mark(&mark, &start);
                             }));
                             Some("link")

@@ -21,7 +21,6 @@ pub struct App {
     pub window: Window,
     pub italic: ToolButton,
     pub bold: ToolButton,
-    pub strikethrough: ToolButton,
     pub h1: ToolButton,
     pub h2: ToolButton,
     pub new: ToolButton,
@@ -62,9 +61,6 @@ impl App {
         italic.set_property_style(Style::Italic);
         italic.set_property_style_set(true);
         tags.add(&italic);
-        let strikethrough = TextTag::new("strikethrough");
-        strikethrough.set_property_strikethrough(true);
-        tags.add(&strikethrough);
         let link = TextTag::new("link");
         link.set_property_foreground(Some("blue"));
         link.set_property_underline_set(true);
@@ -79,7 +75,6 @@ impl App {
             h2: builder.get_object("h2").unwrap(),
             bold: builder.get_object("bold").unwrap(),
             italic: builder.get_object("italic").unwrap(),
-            strikethrough: builder.get_object("strikethrough").unwrap(),
             tabs: builder.get_object("tabs").unwrap(),
             new: builder.get_object("new").unwrap(),
             open: builder.get_object("open").unwrap(),
@@ -278,14 +273,6 @@ impl App {
                 dialog.show_all();
                 dialog.run();
             });
-        let me = self.clone();
-        self.strikethrough
-            .connect_clicked(move |_| {
-                                 let views = me.views.lock().unwrap();
-                                 if let Some(view) = views.get(me.current_view()) {
-                                     view.apply_plain_tag(&me.tags.lookup("strikethrough").unwrap());
-                                 }
-                             });
         let me = self.clone();
         self.italic
             .connect_clicked(move |_| {

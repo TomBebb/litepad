@@ -91,7 +91,7 @@
                 <property name="tooltip_text" translatable="yes">Make the text thicker</property>
                 <property name="label" translatable="yes">Bold</property>
                 <property name="use_underline">True</property>
-                <property name="icon_name">bold</property>
+                <property name="stock_id">gtk-bold</property>
                 <accelerator key="b" signal="clicked" modifiers="GDK_CONTROL_MASK"/>
               </object>
               <packing>
@@ -106,7 +106,22 @@
                 <property name="tooltip_text" translatable="yes">Italicisize the text</property>
                 <property name="label" translatable="yes">Italic</property>
                 <property name="use_underline">True</property>
-                <property name="icon_name">italic</property>
+                <property name="stock_id">gtk-italic</property>
+                <accelerator key="i" signal="clicked" modifiers="GDK_CONTROL_MASK"/>
+              </object>
+              <packing>
+                <property name="expand">False</property>
+                <property name="homogeneous">True</property>
+              </packing>
+            </child>
+            <child>
+              <object class="GtkToolButton" id="strikethrough">
+                <property name="visible">True</property>
+                <property name="can_focus">False</property>
+                <property name="tooltip_text" translatable="yes">Italicisize the text</property>
+                <property name="label" translatable="yes">Strikethrough</property>
+                <property name="use_underline">True</property>
+                <property name="stock_id">gtk-strikethrough</property>
                 <accelerator key="i" signal="clicked" modifiers="GDK_CONTROL_MASK"/>
               </object>
               <packing>

@@ -2,9 +2,13 @@ use source::Source;
 use view::View;
 
 use gtk::*;
+use gtk::prelude::*;
+
+use gdk;
 
 use pango::Style;
 
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use hyper::Url;
@@ -18,6 +22,8 @@ const H3_SCALE: f64 = 1.2;
 #[derive(Clone)]
 pub struct App {
     pub tags: TextTagTable,
+    pub files: TreeView,
+    pub file_list: ListStore,
     pub window: Window,
     pub italic: ToolButton,
     pub bold: ToolButton,
@@ -68,9 +74,18 @@ impl App {
         let code = TextTag::new("code");
         code.set_property_font(Some("Courier New"));
         tags.add(&code);
+        let files: TreeView = builder.get_object("files").unwrap();
+        let name = TreeViewColumn::new();
+        name.set_title("File");
+        files.append_column(&name);
+        let list = ListStore::new(&[Type::String]);
+        list.insert_with_values(None, &[0], &[&"test"]);
+        files.set_model(&list);
         App {
             tags,
             window: builder.get_object("window").unwrap(),
+            files,
+            file_list: list,
             h1: builder.get_object("h1").unwrap(),
             h2: builder.get_object("h2").unwrap(),
             bold: builder.get_object("bold").unwrap(),
@@ -93,6 +108,9 @@ impl App {
         }
     }
     pub fn open(&self, source: Source) {
+        let text = format!("{}", source);
+        println!("open {}", text);
+        self.file_list.insert_with_values(None, &[0], &[&text]);
         let view = View::open(source, &self.tags);
         view.setup(self);
         {
@@ -106,16 +124,21 @@ impl App {
         filter.add_mime_type("text/markdown");
         filter.add_mime_type("text/plain");
         filter.set_name("Markdown");
-        let me = self.clone();
+        self.tabs.drag_dest_set(DEST_DEFAULT_ALL, &[], gdk::ACTION_COPY);
         self.tabs.drag_dest_add_uri_targets();
-        self.tabs.drag_source_add_uri_targets();
+        let me = self.clone();
         self.tabs
             .connect_drag_data_received(move |_, _, _, _, data, _, _| if let Some(uri) =
                 data.get_uris().into_iter().next() {
-                                            let view =
-                                                View::open(Source::Url(Url::parse(&uri)
+                                            let source = if uri.starts_with("file://") {
+                                                Source::File(Path::new(&uri[7..]).to_owned())
+                                            } else {
+                                                Source::Url(Url::parse(&uri)
                                                                            .ok()
-                                                                           .expect("Invalid URL")),
+                                                                           .expect("Invalid URL"))
+                                            };
+                                            let view =
+                                                View::open(source,
                                                            &me.tags);
                                             view.setup(&me);
                                             {

@@ -51,7 +51,7 @@ impl Source {
 impl fmt::Display for Source {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Source::File(ref path) => path.display().fmt(f),
+            Source::File(ref path) => f.write_str(&path.to_string_lossy()),
             Source::Url(ref url) => url.fmt(f),
             Source::Unknown => f.write_str("Untitled"),
         }

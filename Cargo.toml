@@ -16,6 +16,7 @@ travis-ci = { repository = "TomBebb/litepad", branch = "master" }
 [dependencies]
 webbrowser = "^0.2.2"
 gdk-pixbuf = "*"
+gdk = "*"
 hyper-native-tls = "*"
 hyper = "^0.10.9"
 pulldown-cmark = { version = "^0.0.11" }
